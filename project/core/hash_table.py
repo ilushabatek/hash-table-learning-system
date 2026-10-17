@@ -1,46 +1,38 @@
 import pandas as pd
 
-from .data import (
-    append_key_in_json_file,
-    get_json_file,
-    get_key_of_slot,
-    get_rows_of_data,  # noqa: F401
+from .data import append_key_in_json_file, get_json_file, get_key_of_slot
+from .hash_function import hash_dan_bernstein, hash_fnv1a, hash_polynomial
+from .strategies import (
+    append_chaining,
+    append_linear_probing,
+    append_quadratic_probing,
 )
-from .hash_function import hash_Dan_Bernstein, hash_FNV1a, hash_polynomial
-from .strategies import append_chaining, append_linear_probing, append_quadratic_probing
 
 
 class HashTable:
 
-    def __init__(self, size):
+    def __init__(self, size: int):
         self.size = size
         self.slots = [None] * self.size
-        self.used = 0
         self.collision = 0
         self.choice_append_table = None
         self.choice_hash_func = None
         self.extra_key = 'value'
-        self.searched = None  # <-- 1. ДОБАВИЛИ: здесь будем хранить координаты найденного элемента
+        self.searched = None
 
-    def get_data(self, data_load_choice):
-        """Загружает и подготавливает данные из JSON-файла."""
-        
+    def get_data(self, data_load_choice: int) -> list[dict]:
         return append_key_in_json_file(get_json_file(data_load_choice))
 
-    def hash_func_select(self, choice_hash_func, key):
-        """Выбор хеш-функции."""
-        
+    def hash_func_select(self, choice_hash_func: int, key: str) -> int:
         if choice_hash_func == 1:
             return hash_polynomial(key, self.size)
-        elif choice_hash_func == 2:
-            return hash_FNV1a(key, self.size)
-        elif choice_hash_func == 3:
-            return hash_Dan_Bernstein(key, self.size)
+        if choice_hash_func == 2:
+            return hash_fnv1a(key, self.size)
+        if choice_hash_func == 3:
+            return hash_dan_bernstein(key, self.size)
         raise ValueError('Неизвестный номер хеш-функции')
 
-    def append_hash_table(self, item):
-        """Добавление одного элемента в таблицу."""
-        
+    def append_hash_table(self, item: dict) -> None:
         key = item['key']
         index = self.hash_func_select(self.choice_hash_func, key)
 
@@ -53,41 +45,40 @@ class HashTable:
         else:
             raise ValueError("Неизвестный метод разрешения коллизий")
 
-        self.used += 1
-
-    def build(self, choice_append_table, choice_hash_func, items):
-        """Сбрасывает состояние и строит таблицу заново."""
-        
+    def build(self, choice_append_table: int, choice_hash_func: int, items: list[dict]) -> None:
         self.slots = [None] * self.size
-        self.used = 0
         self.collision = 0
         self.choice_append_table = choice_append_table
         self.choice_hash_func = choice_hash_func
-        self.searched = None  # <-- 2. Сбрасываем поиск при пересборке таблицы
+        self.searched = None
+        self.extra_key = 'value'  # ← сброс
 
         if items:
-            for k in items[0]: 
+            for k in items[0]:
                 if k not in ('name', 'key'):
                     self.extra_key = k
                     break
 
+        # Валидация: для открытой адресации элементов должно быть меньше слотов
+        if choice_append_table in (2, 3) and len(items) >= self.size:
+            raise RuntimeError(
+                f"Для открытой адресации нужно size > {len(items)}, "
+                f"а у вас size={self.size}. Увеличьте размер таблицы."
+            )
+
         for item in items:
             self.append_hash_table(item)
 
-    def count_occupied(self):
-        """Количество занятых слотов."""
-        
+    def count_occupied(self) -> int:
         return sum(1 for slot in self.slots if slot is not None)
-        
-    def get_rows_of_hash_table(self):
-        """Возвращает список строк для отображения таблицы."""
-        
+
+    def get_rows_of_hash_table(self) -> list[dict]:
         rows = []
 
         for i, slot in enumerate(self.slots):
             if slot is None:
                 rows.append({
-                    'slot': i+1,
+                    'slot': i + 1,
                     'name': '',
                     self.extra_key: '',
                     '_role': 'empty',
@@ -97,7 +88,6 @@ class HashTable:
             if self.choice_append_table == 1:
                 chain_length = len(slot)
                 for j, item in enumerate(slot):
-                    # <-- 3. ПРОВЕРЯЕМ, НАЙДЕН ЛИ ЭТОТ ЭЛЕМЕНТ
                     if self.searched == (i, j):
                         role = 'searched'
                     elif chain_length == 1:
@@ -108,20 +98,15 @@ class HashTable:
                         role = 'continue'
 
                     rows.append({
-                        'slot': i+1 if j == 0 else '',
+                        'slot': i + 1 if j == 0 else '',
                         'name': item.get('name', ''),
                         self.extra_key: item.get(self.extra_key, ''),
                         '_role': role,
                     })
             else:
-                # <-- 3. ПРОВЕРЯЕМ, НАЙДЕН ЛИ ЭТОТ ЭЛЕМЕНТ
-                if self.searched == (i, -1):
-                    role = 'searched'
-                else:
-                    role = 'single'
-
+                role = 'searched' if self.searched == (i, -1) else 'single'
                 rows.append({
-                    'slot': i+1,
+                    'slot': i + 1,
                     'name': slot.get('name', ''),
                     self.extra_key: slot.get(self.extra_key, ''),
                     '_role': role,
@@ -130,23 +115,15 @@ class HashTable:
         return rows
 
     def get_styled_data(self):
-        """Возвращает DataFrame со стилями для Streamlit."""
-        
         rows = self.get_rows_of_hash_table()
         df = pd.DataFrame(rows, columns=['slot', 'name', self.extra_key, '_role'])
-
-        # 1. Запоминаем роли в отдельную переменную
         roles = df['_role']
-        
-        # 2. БЕЗЖАЛОСТНО УДАЛЯЕМ колонку _role из самого DataFrame
         df = df.drop(columns=['_role'])
 
         def highlight(row):
-            # 3. Берем роль по индексу строки (row.name - это индекс строки)
             role = roles[row.name]
-            
             if role == "searched":
-                return ['background-color: #add8e6'] * len(row)  # Светло-голубой
+                return ['background-color: #add8e6'] * len(row)
             if role == "single":
                 return ['background-color: #c8e6c9'] * len(row)
             if role == "start":
@@ -157,13 +134,9 @@ class HashTable:
                 return ['background-color: #f5f5f5; color: #999'] * len(row)
             return [''] * len(row)
 
-        # 4. Применяем стили к DataFrame, в котором УЖЕ НЕТ колонки _role
-        styler = df.style.apply(highlight, axis=1)
-        return styler
+        return df.style.apply(highlight, axis=1)
 
-    def get_appending_statistics(self):
-        """Возвращает строку со статистикой таблицы."""
-        
+    def get_appending_statistics(self) -> str:
         info = 'Коллизии' if self.choice_append_table == 1 else 'Пробирований'
         occupied = self.count_occupied()
         load = round(occupied / self.size, 2)
@@ -174,20 +147,23 @@ class HashTable:
             f"Заполнено: {round(load * 100)}%\n"
         )
 
-    def find_in_table(self, name):
-        """Поиск элемента по имени с учётом выбранного метода."""
-        
-        self.searched = None  # <-- Сбрасываем прошлый поиск перед новым
+    def find_in_table(self, name: str) -> str:
+        """Поиск по имени. Сравниваем и key, и name."""
+        self.searched = None
         key = get_key_of_slot(name)
+        name_norm = name.strip()
         start = self.hash_func_select(self.choice_hash_func, key)
+
+        def matches(item: dict) -> bool:
+            return item['key'] == key and item['name'].strip() == name_norm
 
         if self.choice_append_table == 1:
             slot = self.slots[start]
             if slot is None:
                 return f"Элемент с именем '{name}' не найден"
             for j, item in enumerate(slot):
-                if item['key'] == key:
-                    self.searched = (start, j)  # <-- Запоминаем координаты
+                if matches(item):
+                    self.searched = (start, j)
                     return f"Элемент с именем '{item['name']}' найден"
             return f"Элемент с именем '{name}' не найден"
 
@@ -196,24 +172,25 @@ class HashTable:
             for _ in range(self.size):
                 if self.slots[index] is None:
                     return f"Элемент с именем '{name}' не найден"
-                if self.slots[index]['key'] == key:
-                    self.searched = (index, -1)  # <-- Запоминаем индекс слота
+                if matches(self.slots[index]):
+                    self.searched = (index, -1)
                     return f"Элемент с именем '{self.slots[index]['name']}' найден"
                 index = (index + 1) % self.size
             return f"Элемент с именем '{name}' не найден"
 
         if self.choice_append_table == 3:
-            if self.slots[start] is not None and self.slots[start]['key'] == key:
-                self.searched = (start, -1)  # <-- Запоминаем индекс слота
+            if self.slots[start] is not None and matches(self.slots[start]):
+                self.searched = (start, -1)
                 return f"Элемент с именем '{self.slots[start]['name']}' найден"
 
             i = 1
             for _ in range(self.size):
-                index = (start + i * i) % self.size
+                # та же формула, что и при вставке — иначе поиск расходится со вставкой
+                index = (start + i * (i + 1) // 2) % self.size
                 if self.slots[index] is None:
                     return f"Элемент с именем '{name}' не найден"
-                if self.slots[index]['key'] == key:
-                    self.searched = (index, -1)  # <-- Запоминаем индекс слота
+                if matches(self.slots[index]):
+                    self.searched = (index, -1)
                     return f"Элемент с именем '{self.slots[index]['name']}' найден"
                 i += 1
             return f"Элемент с именем '{name}' не найден"
