@@ -8,7 +8,7 @@ def hash_polynomial(key, size):
 def hash_Dan_Bernstein(key, size):
     h = 5381
     for ch in key:
-        h = ((h << 5) + h + ord(ch)) % size   # h * 33 + ord(ch)
+        h = ((h << 5) + h + ord(ch)) % size
     return h
 
 
@@ -19,5 +19,5 @@ def hash_FNV1a(key, size):
     h = FNV_OFFSET
     for ch in key:
         h ^= ord(ch)
-        h = (h * FNV_PRIME) & 0xFFFFFFFF   # оставляем 32 бита
+        h = (h * FNV_PRIME) & 0xFFFFFFFF
     return h % size

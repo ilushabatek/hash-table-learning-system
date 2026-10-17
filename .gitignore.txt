@@ -10,8 +10,11 @@ __pycache__/
 *.pyd
 *.egg-info/
 
-# Jupyter
-.ipynb_checkpoints/
+# Кэш и мусор
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
 
 # Системные файлы
 .DS_Store
@@ -20,7 +23,3 @@ Thumbs.db
 # Редакторы
 .vscode/
 .idea/
-
-# Логи и временные файлы
-*.log
-*.tmp
