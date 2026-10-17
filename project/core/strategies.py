@@ -4,10 +4,11 @@ def append_chaining(table, value, index, collision):
     else:
         table[index].append(value)
         collision += 1
-    return collision
+    return collision, index, False
 
 
 def append_linear_probing(table, value, index, collision):
+    start = index
     attempts = 0
     while table[index] is not None:
         index = (index + 1) % len(table)
@@ -16,14 +17,10 @@ def append_linear_probing(table, value, index, collision):
         if attempts >= len(table):
             raise RuntimeError("Таблица заполнена")
     table[index] = value
-    return collision
+    return collision, index, index != start
 
 
 def append_quadratic_probing(table, value, index, collision):
-    """Квадратичное пробирование через треугольные числа.
-
-    offset_i = i*(i+1)/2. Для size = 2^k обходит все слоты без повторов.
-    """
     start = index
     i = 1
     attempts = 0
@@ -35,4 +32,4 @@ def append_quadratic_probing(table, value, index, collision):
         if attempts >= len(table):
             raise RuntimeError("Таблица заполнена (size должен быть степенью двойки)")
     table[index] = value
-    return collision
+    return collision, index, index != start

@@ -19,6 +19,7 @@ class HashTable:
         self.choice_hash_func = None
         self.extra_key = 'value'
         self.searched = None
+        self.probed_slots: set[int] = set()  # ← новое
 
     def get_data(self, data_load_choice: int) -> list[dict]:
         return append_key_in_json_file(get_json_file(data_load_choice))
@@ -37,11 +38,21 @@ class HashTable:
         index = self.hash_func_select(self.choice_hash_func, key)
 
         if self.choice_append_table == 1:
-            self.collision = append_chaining(self.slots, item, index, self.collision)
+            self.collision, _, _ = append_chaining(
+                self.slots, item, index, self.collision
+            )
         elif self.choice_append_table == 2:
-            self.collision = append_linear_probing(self.slots, item, index, self.collision)
+            self.collision, final, was_probed = append_linear_probing(
+                self.slots, item, index, self.collision
+            )
+            if was_probed:
+                self.probed_slots.add(final)
         elif self.choice_append_table == 3:
-            self.collision = append_quadratic_probing(self.slots, item, index, self.collision)
+            self.collision, final, was_probed = append_quadratic_probing(
+                self.slots, item, index, self.collision
+            )
+            if was_probed:
+                self.probed_slots.add(final)
         else:
             raise ValueError("Неизвестный метод разрешения коллизий")
 
@@ -51,7 +62,8 @@ class HashTable:
         self.choice_append_table = choice_append_table
         self.choice_hash_func = choice_hash_func
         self.searched = None
-        self.extra_key = 'value'  # ← сброс
+        self.extra_key = 'value'
+        self.probed_slots = set()  # ← сброс
 
         if items:
             for k in items[0]:
@@ -59,7 +71,6 @@ class HashTable:
                     self.extra_key = k
                     break
 
-        # Валидация: для открытой адресации элементов должно быть меньше слотов
         if choice_append_table in (2, 3) and len(items) >= self.size:
             raise RuntimeError(
                 f"Для открытой адресации нужно size > {len(items)}, "
@@ -104,7 +115,14 @@ class HashTable:
                         '_role': role,
                     })
             else:
-                role = 'searched' if self.searched == (i, -1) else 'single'
+                # Приоритет: searched > probed > single
+                if self.searched == (i, -1):
+                    role = 'searched'
+                elif i in self.probed_slots:
+                    role = 'probed'
+                else:
+                    role = 'single'
+
                 rows.append({
                     'slot': i + 1,
                     'name': slot.get('name', ''),
@@ -124,6 +142,8 @@ class HashTable:
             role = roles[row.name]
             if role == "searched":
                 return ['background-color: #add8e6'] * len(row)
+            if role == "probed":                          # ← новое
+                return ['background-color: #fff176'] * len(row)
             if role == "single":
                 return ['background-color: #c8e6c9'] * len(row)
             if role == "start":
@@ -148,7 +168,6 @@ class HashTable:
         )
 
     def find_in_table(self, name: str) -> str:
-        """Поиск по имени. Сравниваем и key, и name."""
         self.searched = None
         key = get_key_of_slot(name)
         name_norm = name.strip()
@@ -185,7 +204,6 @@ class HashTable:
 
             i = 1
             for _ in range(self.size):
-                # та же формула, что и при вставке — иначе поиск расходится со вставкой
                 index = (start + i * (i + 1) // 2) % self.size
                 if self.slots[index] is None:
                     return f"Элемент с именем '{name}' не найден"
@@ -196,3 +214,64 @@ class HashTable:
             return f"Элемент с именем '{name}' не найден"
 
         raise ValueError("Неизвестный метод разрешения коллизий")
+
+    # ─── Для правой панели ──────────────────────────────────────────
+
+    def _get_clusters(self) -> list[int]:
+        n = self.size
+        occupied = [slot is not None for slot in self.slots]
+        if all(occupied):
+            return [n]
+        if not any(occupied):
+            return []
+        start = occupied.index(False)
+        clusters: list[int] = []
+        current = 0
+        for k in range(n):
+            i = (start + k) % n
+            if occupied[i]:
+                current += 1
+            else:
+                if current > 0:
+                    clusters.append(current)
+                current = 0
+        if current > 0:
+            clusters.append(current)
+        return clusters
+
+    def _get_chain_distribution(self) -> tuple[dict[int, int], list[int]]:
+        chains = [len(slot) for slot in self.slots if slot is not None]
+        distribution: dict[int, int] = {}
+        for length in chains:
+            distribution[length] = distribution.get(length, 0) + 1
+        return dict(sorted(distribution.items())), chains
+
+    def get_distribution_stats(self) -> dict:
+        if self.choice_append_table is None:
+            return {}
+        occupied = self.count_occupied()
+        stats: dict = {
+            'method': self.choice_append_table,
+            'size': self.size,
+            'occupied': occupied,
+            'empty': self.size - occupied,
+            'load': occupied / self.size if self.size else 0.0,
+            'collision': self.collision,
+        }
+        if self.choice_append_table == 1:
+            distribution, chains = self._get_chain_distribution()
+            stats.update({
+                'chains_count': len(chains),
+                'chain_distribution': distribution,
+                'max_chain': max(chains) if chains else 0,
+                'avg_chain': sum(chains) / len(chains) if chains else 0.0,
+            })
+        else:
+            clusters = self._get_clusters()
+            stats.update({
+                'clusters': clusters,
+                'clusters_count': len(clusters),
+                'max_cluster': max(clusters) if clusters else 0,
+                'avg_cluster': sum(clusters) / len(clusters) if clusters else 0.0,
+            })
+        return stats
