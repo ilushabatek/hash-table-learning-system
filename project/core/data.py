@@ -34,3 +34,26 @@ def append_key_in_json_file(data):
 def get_key_of_slot(name):
     """Возвращает ключ, соответствующий имени (для поиска)."""
     return make_key(name)
+
+
+def get_rows_of_data(data):
+    """Возвращает данные в виде списка строк, автоматически определяя название второй колонки."""
+    if not data:
+        return []
+
+    # 1. Ищем название второго ключа (пропускаем 'name' и 'key')
+    extra_key = 'value'  # запасной вариант
+    for k in data[0]:
+        if k not in ('name', 'key'):
+            extra_key = k
+            break
+
+    # 2. Формируем строки ТОЛЬКО из двух колонок
+    rows = []
+    for item in data:
+        rows.append({
+            'name': item.get('name', ''),
+            extra_key: item.get(extra_key, '') 
+        })
+        
+    return rows

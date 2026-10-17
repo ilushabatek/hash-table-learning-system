@@ -1,6 +1,11 @@
 import pandas as pd
 
-from .data import append_key_in_json_file, get_json_file, get_key_of_slot
+from .data import (
+    append_key_in_json_file,
+    get_json_file,
+    get_key_of_slot,
+    get_rows_of_data,  # noqa: F401
+)
 from .hash_function import hash_Dan_Bernstein, hash_FNV1a, hash_polynomial
 from .strategies import append_chaining, append_linear_probing, append_quadratic_probing
 
@@ -73,7 +78,7 @@ class HashTable:
         """Количество занятых слотов."""
         
         return sum(1 for slot in self.slots if slot is not None)
-
+        
     def get_rows_of_hash_table(self):
         """Возвращает список строк для отображения таблицы."""
         
@@ -82,7 +87,7 @@ class HashTable:
         for i, slot in enumerate(self.slots):
             if slot is None:
                 rows.append({
-                    'slot': i,
+                    'slot': i+1,
                     'name': '',
                     self.extra_key: '',
                     '_role': 'empty',
@@ -103,7 +108,7 @@ class HashTable:
                         role = 'continue'
 
                     rows.append({
-                        'slot': i if j == 0 else '',
+                        'slot': i+1 if j == 0 else '',
                         'name': item.get('name', ''),
                         self.extra_key: item.get(self.extra_key, ''),
                         '_role': role,
@@ -116,7 +121,7 @@ class HashTable:
                     role = 'single'
 
                 rows.append({
-                    'slot': i,
+                    'slot': i+1,
                     'name': slot.get('name', ''),
                     self.extra_key: slot.get(self.extra_key, ''),
                     '_role': role,
@@ -164,9 +169,9 @@ class HashTable:
         load = round(occupied / self.size, 2)
 
         return (
-            f"{info}: {self.collision}\t\t\t"
-            f"Занято слотов: {occupied} из {self.size}\t\t\t"
-            f"Коэффициент заполненности: {load}"
+            f"{info}: {self.collision}\n"
+            f"Занято: {occupied}\n"
+            f"Заполнено: {round(load * 100)}%\n"
         )
 
     def find_in_table(self, name):
