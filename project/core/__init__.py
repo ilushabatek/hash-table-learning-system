@@ -6,6 +6,7 @@ from .data import (  # noqa: F401, RUF100
     make_key,
 )
 from .hash_table import HashTable  # noqa: F401, RUF100
+from .quiz import generate_test  # noqa: F401
 
 __all__ = [  # noqa: RUF022
     'append_key_in_json_file',

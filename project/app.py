@@ -1,6 +1,8 @@
 import streamlit as st
 from core import HashTable, get_rows_of_data
+from core.quiz import generate_test
 
+# ─── Конфигурация страницы (обязательно в начале) ───────────────────
 st.set_page_config(
     page_title="HashLearn",
     page_icon="🔐",
@@ -8,6 +10,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ─── CSS: расширяем контент на весь экран ───────────────────────────
 st.markdown(
     """
     <style>
@@ -23,6 +26,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ─── Константы и тексты ─────────────────────────────────────────────
 DATA_OPTIONS = {
     1: "👤 Пользователи (users.json)",
     2: "📦 Товары (products.json)",
@@ -93,14 +97,19 @@ METHOD_DESCRIPTIONS = {
 
 st.title('HashLearn — обучающая система по хэш-таблицам')
 
+# ─── Инициализация сессий ───────────────────────────────────────────
 if 'last_search' not in st.session_state:
     st.session_state['last_search'] = ''
+if 'quiz_questions' not in st.session_state:
+    st.session_state['quiz_questions'] = None
+    st.session_state['quiz_submitted'] = False
+    st.session_state['quiz_score'] = 0
+    st.session_state['user_answers'] = []
 
-# ─── Сайдбар ────────────────────────────────────────────────────────
+# ─── САЙДБАР (глобальный) ───────────────────────────────────────────
 with st.sidebar:
     st.header('Панель управления')
 
-    # ── Шаг 1 (было: только [16, 32])
     size = st.slider(
         "Размер хэш-таблицы:",
         min_value=10,
@@ -127,7 +136,7 @@ with st.sidebar:
         index=0,
     )
 
-    # ── Предупреждение о неоптимальном size для квадратичного (не блокирует)
+    # Предупреждение для квадратичного
     if choice_append_table == 3 and (size & (size - 1)) != 0:
         st.warning(
             f"⚠️ **size={size}** — не степень двойки.\n\n"
@@ -160,84 +169,171 @@ with st.sidebar:
         _legend('#ffcdd2', 'Начало цепочки')
         _legend('#fff9c4', 'Продолжение цепочки')
     else:
-        _legend('#fff176', 'Пробированный элемент')  # ← новое
+        _legend('#fff176', 'Пробированный элемент')
     _legend('#add8e6', 'Найденный элемент')
     _legend('#f5f5f5', 'Пустой слот', '#999')
 
-if search_clicked:
-    st.session_state['last_search'] = search_name.strip()
 
-# ─── Построение таблицы ─────────────────────────────────────────────
-h = HashTable(size=size)
-items = h.get_data(data_load_choice)
+# ─── ВКЛАДКИ ────────────────────────────────────────────────────────
+tab_research, tab_quiz = st.tabs(["🔍 Исследование хэш-таблицы", "📝 Тестирование"])
 
-if choice_append_table in (2, 3) and len(items) >= size:
-    st.error(
-        f"Для открытой адресации нужно size > {len(items)}. "
-        f"Сейчас size={size}, элементов={len(items)}. Увеличьте размер."
-    )
-    st.stop()
+# ================= ВКЛАДКА 1: ИССЛЕДОВАНИЕ =========================
+with tab_research:
+    if search_clicked:
+        st.session_state['last_search'] = search_name.strip()
 
-try:
-    h.build(choice_append_table, choice_hash_func, items)
-except RuntimeError as e:
-    st.error(f"Не удалось построить таблицу: {e}")
-    st.stop()
+    h = HashTable(size=size)
+    items = h.get_data(data_load_choice)
 
-if st.session_state['last_search']:
-    result = h.find_in_table(st.session_state['last_search'])
-    if 'не найден' in result:
-        st.warning(result)
-    else:
-        st.success(result)
-
-# ─── Три колонки ────────────────────────────────────────────────────
-col_hash, col_source, col_info = st.columns([1.1, 1.1, 1], gap="medium")
-
-with col_hash:
-    st.subheader('Хэш-таблица')
-    st.dataframe(h.get_styled_data(), use_container_width=True, hide_index=True)
-    st.text(h.get_appending_statistics())
-
-with col_source:
-    st.subheader('Исходные данные')
-    st.dataframe(get_rows_of_data(items), use_container_width=True, hide_index=True)
-
-with col_info:
-    st.subheader('📊 Распределение')
-
-    with st.container(border=True):
-        st.markdown(METHOD_DESCRIPTIONS[choice_append_table])
-
-    stats = h.get_distribution_stats()
-
-    with st.container(border=True):
-        st.markdown('**Текущая таблица**')
-        st.markdown(
-            f"- Слотов: {stats['size']}\n"
-            f"- Занято: {stats['occupied']}\n"
-            f"- Пусто: {stats['empty']}\n"
-            f"- Загрузка: {stats['load']:.0%}\n"
-            f"- Коллизий/проб: {stats['collision']}"
+    # Валидация размера
+    if choice_append_table in (2, 3) and len(items) >= size:
+        st.error(
+            f"Для открытой адресации нужно size > {len(items)}. "
+            f"Сейчас size={size}, элементов={len(items)}. Увеличьте размер."
         )
+        st.stop()
 
-    if choice_append_table == 1:
+    try:
+        h.build(choice_append_table, choice_hash_func, items)
+    except RuntimeError as e:
+        st.error(f"Не удалось построить таблицу: {e}")
+        st.stop()
+
+    # Результат поиска
+    if st.session_state['last_search']:
+        result = h.find_in_table(st.session_state['last_search'])
+        if 'не найден' in result:
+            st.warning(result)
+        else:
+            st.success(result)
+
+    # Три колонки: Таблица | Исходные данные | Инфо
+    col_hash, col_source, col_info = st.columns([1.1, 1.1, 1], gap="medium")
+
+    with col_hash:
+        st.subheader('Хэш-таблица')
+        st.dataframe(h.get_styled_data(), use_container_width=True, hide_index=True)
+        st.text(h.get_appending_statistics())
+
+    with col_source:
+        st.subheader('Исходные данные')
+        st.dataframe(get_rows_of_data(items), use_container_width=True, hide_index=True)
+
+    with col_info:
+        st.subheader('📊 Распределение')
+
         with st.container(border=True):
-            st.markdown('**Цепочки**')
-            st.markdown(
-                f"- Макс. длина: **{stats['max_chain']}**\n"
-                f"- Средняя: **{stats['avg_chain']:.2f}**"
-            )
-            st.caption(f'Худший поиск: {stats["max_chain"]} сравнений')
-    else:
+            st.markdown(METHOD_DESCRIPTIONS[choice_append_table])
+
+        stats = h.get_distribution_stats()
+
         with st.container(border=True):
-            st.markdown('**Кластеры**')
+            st.markdown('**Текущая таблица**')
             st.markdown(
-                f"- Кластеров: **{stats['clusters_count']}**\n"
-                f"- Макс. длина: **{stats['max_cluster']}**\n"
-                f"- Средняя: **{stats['avg_cluster']:.2f}**"
+                f"- Слотов: {stats['size']}\n"
+                f"- Занято: {stats['occupied']}\n"
+                f"- Пусто: {stats['empty']}\n"
+                f"- Загрузка: {stats['load']:.0%}\n"
+                f"- Коллизий/проб: {stats['collision']}"
             )
-            if stats['clusters']:
-                st.caption('Длины кластеров:')
-                st.text('  '.join(str(c) for c in stats['clusters']))
-            st.caption(f'Худший поиск: {stats["max_cluster"]} проб')
+
+        if choice_append_table == 1:
+            with st.container(border=True):
+                st.markdown('**Цепочки**')
+                st.markdown(
+                    f"- Макс. длина: **{stats['max_chain']}**\n"
+                    f"- Средняя: **{stats['avg_chain']:.2f}**"
+                )
+                st.caption(f'Худший поиск: {stats["max_chain"]} сравнений')
+        else:
+            with st.container(border=True):
+                st.markdown('**Кластеры**')
+                st.markdown(
+                    f"- Кластеров: **{stats['clusters_count']}**\n"
+                    f"- Макс. длина: **{stats['max_cluster']}**\n"
+                    f"- Средняя: **{stats['avg_cluster']:.2f}**"
+                )
+                if stats['clusters']:
+                    st.caption('Длины кластеров:')
+                    st.text('  '.join(str(c) for c in stats['clusters']))
+                st.caption(f'Худший поиск: {stats["max_cluster"]} проб')
+
+
+# ================= ВКЛАДКА 2: ТЕСТИРОВАНИЕ =========================
+with tab_quiz:
+    st.header("📝 Проверка знаний")
+    st.write("Тест состоит из 5 случайных вопросов по 4 варианта ответов. Выберите один правильный вариант в каждом.")
+    
+    if st.button("🎲 Сгенерировать новый тест"):
+        st.session_state['quiz_questions'] = generate_test()
+        st.session_state['quiz_submitted'] = False
+        st.session_state['quiz_score'] = 0
+        st.session_state['user_answers'] = []
+
+    if st.session_state['quiz_questions'] is not None:
+        # Если тест еще не сдан — показываем форму
+        if not st.session_state['quiz_submitted']:
+            with st.form("quiz_form"):
+                user_answers = []
+                for i, q in enumerate(st.session_state['quiz_questions']):
+                    st.markdown(f"**Вопрос {i+1}. {q['question']}**")
+                    ans = st.radio(
+                        f"Выберите ответ на вопрос {i+1}:", 
+                        options=q['options'], 
+                        index=None, 
+                        key=f"q_{i}",
+                        label_visibility="collapsed"
+                    )
+                    user_answers.append(ans)
+                    st.divider()
+
+                submitted = st.form_submit_button("✅ Завершить тест и проверить")
+                
+                if submitted:
+                    # Считаем результат
+                    score = 0
+                    for i, q in enumerate(st.session_state['quiz_questions']):
+                        if user_answers[i] == q['options'][q['correct']]:
+                            score += 1
+                    
+                    # Сохраняем в session_state
+                    st.session_state['quiz_submitted'] = True
+                    st.session_state['quiz_score'] = score
+                    st.session_state['user_answers'] = user_answers
+                    st.rerun()  # Перезагружаем, чтобы обновить интерфейс
+
+        # Если тест сдан — показываем результаты
+        else:
+            score = st.session_state['quiz_score']
+            total = len(st.session_state['quiz_questions'])
+            
+            st.header("Результаты тестирования")
+            if score == 5:
+                st.balloons()
+                st.success(f"Отлично! Вы ответили правильно на {score} из {total} вопросов.")
+            elif score >= 3:
+                st.info(f"Хорошо! Вы ответили правильно на {score} из {total} вопросов.")
+            else:
+                st.error(f"Стоит повторить материал. Вы ответили правильно на {score} из {total} вопросов.")
+
+            st.subheader("Анализ ответов:")
+            for i, q in enumerate(st.session_state['quiz_questions']):
+                user_ans_text = st.session_state['user_answers'][i]
+                correct_ans_text = q['options'][q['correct']]
+                
+                if user_ans_text == correct_ans_text:
+                    st.markdown(f"✅ **Вопрос {i+1}:** {q['question']}")
+                else:
+                    st.markdown(f"❌ **Вопрос {i+1}:** {q['question']}")
+                    if user_ans_text is not None:
+                        st.markdown(f"   - Ваш ответ: ~~{user_ans_text}~~")
+                    else:
+                        st.markdown("   - Вы не дали ответ.")
+                    st.markdown(f"   - Правильный ответ: **{correct_ans_text}**")
+
+            if st.button("Пройти тест заново"):
+                st.session_state['quiz_submitted'] = False
+                st.session_state['quiz_score'] = 0
+                st.session_state['user_answers'] = []
+                st.session_state['quiz_questions'] = generate_test()
+                st.rerun()
